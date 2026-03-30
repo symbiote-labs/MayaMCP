@@ -100,6 +100,8 @@ _mcp_maya_results = _mcp_io_buf.getvalue()
         JSON = "json"
         NONE = "none"
 
+    _call_counter = 0
+
     def run_python_script(
         self,
         python_script:str,
@@ -108,28 +110,32 @@ _mcp_maya_results = _mcp_io_buf.getvalue()
     ):
         if returns == MayaConnection.ScriptReturn.STDOUT:
             python_script = MayaConnection._update_script_to_capture_stdout(python_script)
-        else:
-            python_script = "_mcp_maya_results = None\n" + python_script
-
-        # Execute the script — first call may return loading messages
-        result = self._send_python_command(python_script)
-
-        # strip any extra characters added at the end
-        if result:
-            result = result.replace(chr(0), '')
-            result = result.replace(chr(10), '')
-        else:
-            result = ''
-
-        if returns == MayaConnection.ScriptReturn.NONE:
+            result = self._send_python_command(python_script)
+            if result:
+                result = result.replace(chr(0), '')
             return result
 
-        # Always retrieve _mcp_maya_results via a second command.
+        # Use a unique variable name per call to avoid stale results
+        # from previous tool invocations persisting in Maya's namespace.
+        MayaConnection._call_counter += 1
+        call_id = MayaConnection._call_counter
+        var_name = f"_mcp_result_{call_id}"
+
+        python_script = f"{var_name} = None\n" + python_script
+        # Replace the standard _mcp_maya_results assignment with our unique var
+        python_script = python_script.replace("_mcp_maya_results", var_name)
+
+        # Execute the script — first call may return loading messages
+        self._send_python_command(python_script)
+
+        if returns == MayaConnection.ScriptReturn.NONE:
+            return None
+
+        # Retrieve result via a second command using our unique variable.
         # The first command's response often contains lazy-loaded library
-        # messages that pollute the result. The second command is clean
-        # because Maya has finished loading by then.
+        # messages. The second command is clean.
         result = self._send_python_command(
-            "import json as _mj; _mj.dumps(_mcp_maya_results, default=str)"
+            f"import json as _mj; _mj.dumps({var_name}, default=str)"
         )
         if result:
             result = result.replace(chr(0), '')
