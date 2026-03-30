@@ -102,8 +102,8 @@ _mcp_maya_results = _mcp_io_buf.getvalue()
 
     def run_python_script(
         self,
-        python_script:str, 
-        *, 
+        python_script:str,
+        *,
         returns:ScriptReturn = ScriptReturn.JSON
     ):
         if returns == MayaConnection.ScriptReturn.STDOUT:
@@ -111,23 +111,34 @@ _mcp_maya_results = _mcp_io_buf.getvalue()
         else:
             python_script = "_mcp_maya_results = None\n" + python_script
 
+        # Execute the script — first call may return loading messages
         result = self._send_python_command(python_script)
 
         # strip any extra characters added at the end
-        result = result.replace(chr(0), '')
-        result = result.replace(chr(10), '')
+        if result:
+            result = result.replace(chr(0), '')
+            result = result.replace(chr(10), '')
+        else:
+            result = ''
 
-        if returns != MayaConnection.ScriptReturn.NONE and (not result or result == '\n'):
-            result = self._send_python_command("_mcp_maya_results")
-            # strip any extra characters added at the end
+        if returns == MayaConnection.ScriptReturn.NONE:
+            return result
+
+        # Always retrieve _mcp_maya_results via a second command.
+        # The first command's response often contains lazy-loaded library
+        # messages that pollute the result. The second command is clean
+        # because Maya has finished loading by then.
+        result = self._send_python_command(
+            "import json as _mj; _mj.dumps(_mcp_maya_results, default=str)"
+        )
+        if result:
             result = result.replace(chr(0), '')
             result = result.replace(chr(10), '')
 
-        if returns != MayaConnection.ScriptReturn.NONE:
+        if result:
             try:
-                result = json.loads(result)
-            except:
-                # if unable to parse as JSON, just return as is
+                return json.loads(result)
+            except (json.JSONDecodeError, ValueError):
                 pass
 
         return result
