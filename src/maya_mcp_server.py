@@ -100,34 +100,51 @@ _mcp_maya_results = _mcp_io_buf.getvalue()
         JSON = "json"
         NONE = "none"
 
+    _call_counter = 0
+
     def run_python_script(
         self,
-        python_script:str, 
-        *, 
+        python_script:str,
+        *,
         returns:ScriptReturn = ScriptReturn.JSON
     ):
         if returns == MayaConnection.ScriptReturn.STDOUT:
             python_script = MayaConnection._update_script_to_capture_stdout(python_script)
-        else:
-            python_script = "_mcp_maya_results = None\n" + python_script
+            result = self._send_python_command(python_script)
+            if result:
+                result = result.replace(chr(0), '')
+            return result
 
-        result = self._send_python_command(python_script)
+        # Use a unique variable name per call to avoid stale results
+        # from previous tool invocations persisting in Maya's namespace.
+        MayaConnection._call_counter += 1
+        call_id = MayaConnection._call_counter
+        var_name = f"_mcp_result_{call_id}"
 
-        # strip any extra characters added at the end
-        result = result.replace(chr(0), '')
-        result = result.replace(chr(10), '')
+        python_script = f"{var_name} = None\n" + python_script
+        # Replace the standard _mcp_maya_results assignment with our unique var
+        python_script = python_script.replace("_mcp_maya_results", var_name)
 
-        if returns != MayaConnection.ScriptReturn.NONE and (not result or result == '\n'):
-            result = self._send_python_command("_mcp_maya_results")
-            # strip any extra characters added at the end
+        # Execute the script — first call may return loading messages
+        self._send_python_command(python_script)
+
+        if returns == MayaConnection.ScriptReturn.NONE:
+            return None
+
+        # Retrieve result via a second command using our unique variable.
+        # The first command's response often contains lazy-loaded library
+        # messages. The second command is clean.
+        result = self._send_python_command(
+            f"import json as _mj; _mj.dumps({var_name}, default=str)"
+        )
+        if result:
             result = result.replace(chr(0), '')
             result = result.replace(chr(10), '')
 
-        if returns != MayaConnection.ScriptReturn.NONE:
+        if result:
             try:
-                result = json.loads(result)
-            except:
-                # if unable to parse as JSON, just return as is
+                return json.loads(result)
+            except (json.JSONDecodeError, ValueError):
                 pass
 
         return result
