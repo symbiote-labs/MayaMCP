@@ -43,7 +43,11 @@ def qc_rig_fix(
             return
         seen.add(plug)
         before = cmds.getAttr(plug)
-        if before == after or (isinstance(before, bool) and int(before) == after):
+        # Report the new value in the attribute's own type (False for a bool, 0.0 for a
+        # double), so a row never reads "True -> 0".
+        if isinstance(before, (bool, int, float)):
+            after = type(before)(after)
+        if before == after:
             return
         plan.append({"plug": plug, "before": before, "after": after, "reason": reason})
 
