@@ -21,7 +21,7 @@ def qc_rig_profile(
     influences, smooth mesh preview and references.
     success is True when the measured fps meets target_fps.
     The scene's playback settings, cached playback and current frame are restored afterwards;
-    no scene nodes are modified. Keeps itself under ~55 s by dropping optional passes."""
+    no scene nodes are modified, and a scene with no unsaved changes before is left with none. Keeps itself under ~55 s by dropping optional passes."""
     import maya.cmds as cmds
 
     budget_s = 52.0
@@ -43,6 +43,7 @@ def qc_rig_profile(
     end = min(scene_end, scene_start + max(2, frames) - 1)
     n = end - scene_start + 1
 
+    was_modified = cmds.file(q=True, modified=True)
     saved = {
         "time": cmds.currentTime(q=True),
         "pb": {k: cmds.playbackOptions(q=True, **{k: True})
@@ -103,6 +104,11 @@ def qc_rig_profile(
         cmds.playbackOptions(**saved["pb"])
         cmds.evaluator(name="cache", enable=saved["cache"])
         cmds.currentTime(saved["time"])
+        # Everything changed above is restored, so a scene that was clean is clean again;
+        # otherwise the next open would ask about unsaved changes that are only playback
+        # settings. A scene with real unsaved work keeps its flag.
+        if not was_modified:
+            cmds.file(modified=False)
 
     viewport_fps = round(statistics.median(viewport_runs), 1)
 
