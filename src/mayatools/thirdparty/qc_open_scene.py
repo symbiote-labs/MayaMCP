@@ -1,3 +1,4 @@
+import os
 from typing import Dict, Any
 
 def qc_open_scene(file_path: str, discard_unsaved: bool = False) -> Dict[str, Any]:
@@ -10,10 +11,25 @@ def qc_open_scene(file_path: str, discard_unsaved: bool = False) -> Dict[str, An
     nodes, unresolved references). Falls back to exception handling +
     filePathEditor in standalone mode where MCommandMessage is unreliable.
 
-    Refuses (raises) when the open scene has unsaved changes, so an artist's work
+    If file_path is already the open scene it is not reloaded (already_open=True).
+    Refuses (raises) when another open scene has unsaved changes, so an artist's work
     isn't thrown away; pass discard_unsaved=True to open anyway - only after the
     user agreed."""
     import maya.cmds as cmds
+
+    current = cmds.file(q=True, sceneName=True)
+    if (current and not discard_unsaved
+            and os.path.normpath(current) == os.path.normpath(file_path)):
+        # Already the open scene: nothing to load, and reloading would only risk unsaved work.
+        return {
+            "success": True,
+            "scene_file": current,
+            "already_open": True,
+            "message": "Already the open scene; not reloaded. Pass discard_unsaved=True to "
+                       "reload it from disk.",
+            "errors": [], "warnings": [], "infos": [],
+            "error_count": 0, "warning_count": 0,
+        }
 
     if cmds.file(q=True, modified=True) and not discard_unsaved:
         current = cmds.file(q=True, sceneName=True) or "an untitled scene"
