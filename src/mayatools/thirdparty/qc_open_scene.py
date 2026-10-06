@@ -1,6 +1,6 @@
 from typing import Dict, Any
 
-def qc_open_scene(file_path: str) -> Dict[str, Any]:
+def qc_open_scene(file_path: str, discard_unsaved: bool = False) -> Dict[str, Any]:
     """Open a Maya scene file and report integrity. Returns success status,
     any errors or warnings captured during open, and basic scene info.
     Use this as the first step in QC — it validates the file can be loaded.
@@ -8,8 +8,19 @@ def qc_open_scene(file_path: str) -> Dict[str, Any]:
     Uses OpenMaya.MCommandMessage callback for comprehensive error capture
     in interactive Maya (catches C++ warnings for missing textures, unknown
     nodes, unresolved references). Falls back to exception handling +
-    filePathEditor in standalone mode where MCommandMessage is unreliable."""
+    filePathEditor in standalone mode where MCommandMessage is unreliable.
+
+    Refuses (raises) when the open scene has unsaved changes, so an artist's work
+    isn't thrown away; pass discard_unsaved=True to open anyway - only after the
+    user agreed."""
     import maya.cmds as cmds
+
+    if cmds.file(q=True, modified=True) and not discard_unsaved:
+        current = cmds.file(q=True, sceneName=True) or "an untitled scene"
+        raise RuntimeError(
+            f"The open scene ({current}) has unsaved changes. Ask the user, then "
+            "call again with discard_unsaved=True to open anyway."
+        )
 
     errors = []
     warnings = []
